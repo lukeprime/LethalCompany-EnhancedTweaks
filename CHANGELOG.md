@@ -1,3 +1,7 @@
+# 1.0.1
+03/20/2024
+- Updated readme for clarity.
+
 # 1.0.0
 03/19/2024
 - Initial release
