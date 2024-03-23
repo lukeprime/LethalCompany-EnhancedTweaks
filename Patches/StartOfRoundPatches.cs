@@ -33,7 +33,7 @@ namespace EnhancedTweaks.Patches
             }
         }
 
-        [HarmonyPatch("StartGame")]
+        [HarmonyPatch("openingDoorsSequence")]
         [HarmonyPostfix]
         static void UpdateSeedUI(StartOfRound __instance)
         {
