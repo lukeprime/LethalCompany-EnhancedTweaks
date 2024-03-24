@@ -1,17 +1,17 @@
-# 1.0.3
+# v1.0.3
 03/24/2024
 - Tweak default seed font size and opacity to withstand strong streaming video compressions
 - Add screenshots to readme
 
-# 1.0.2
+# v1.0.2
 03/23/2024
 - Fix seed display showing only for host
 
-# 1.0.1
+# v1.0.1
 03/20/2024
 - Updated readme for clarity.
 
-# 1.0.0
+# v1.0.0
 03/19/2024
 - Initial release
 - Faster racking up of `new quota` after completing the current quota
