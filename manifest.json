@@ -2,7 +2,7 @@
     "name": "EnhancedTweaks",
     "version_number": "1.0.3",
     "website_url": "https://github.com/lukeprime/LethalCompany-EnhancedTweaks",
-    "description": "Faster \"New Profit Quota\" rack up, customizable seed display, and more to come.",
+    "description": "Faster racking up of \"New Profit Quota\", customizable seed display, and more to come.",
     "dependencies": [
         "BepInEx-BepInExPack-5.4.2100"
     ],
