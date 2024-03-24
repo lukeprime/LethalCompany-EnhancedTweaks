@@ -1,3 +1,8 @@
+# 1.0.3
+03/24/2024
+- Tweak default seed font size and opacity to withstand strong streaming video compressions
+- Add screenshots to readme
+
 # 1.0.2
 03/23/2024
 - Fix seed display showing only for host
