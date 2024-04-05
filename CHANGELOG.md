@@ -1,3 +1,8 @@
+# v1.0.4
+04/04/2024
+- Add option to help lightning warnings from GeneralImprovements to work better with custom hotbar sizes from some mods
+- Fix player rotation when exiting facility through a fire door
+
 # v1.0.3
 03/24/2024
 - Tweak default seed font size and opacity to withstand strong streaming video compressions

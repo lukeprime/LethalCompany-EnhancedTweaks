@@ -1,6 +1,9 @@
-﻿using HarmonyLib;
+﻿using BepInEx.Configuration;
+using GameNetcodeStuff;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using TMPro;
@@ -12,10 +15,81 @@ namespace EnhancedTweaks.Patches
     [HarmonyPatch(typeof(HUDManager))]
     internal class HUDManagerPatches
     {
+        internal const string GIPluginTypeName = "GeneralImprovements.Plugin";
+        internal const string GIHUDManagerPatchTypeName = "GeneralImprovements.Patches.HUDManagerPatch";
+        internal const string GIShowHitPointsFieldName = "ShowHitPoints";
+        internal const string GIHUDManagerStartMethodName = "Start";
+
+        internal static HUDManager _hudManager;
         internal static GameObject _seedScreenCanvas;
         internal static GameObject _seedUI;
         internal static TextMeshProUGUI _seedUIText;
         internal static Vector2 _prevDisplaySize;
+        internal static int _vanillaItemSlotSize = -1;
+
+        internal static bool _helpersInitialized = false;
+        internal static bool _hasGeneralImprovements = false;
+        internal static bool _lightningWarningSlotsResized = false;
+        internal static PropertyInfo _giShowHitPoints;
+        internal static MethodInfo _giHUDManagerStart;
+        internal static int _prevItemSlotSize;
+
+        internal static void InitializeHelpers()
+        {
+            if (_helpersInitialized)
+            {
+                return;
+            }
+
+            if (Plugin.helpResizeLightningWarningSlots.Value)
+            {
+                try
+                {
+                    Assembly generalImprovements = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.FullName.Contains("GeneralImprovements,"));
+                    if (generalImprovements != null)
+                    {
+                        Type giPluginType = generalImprovements.GetType(GIPluginTypeName);
+                        Type giHUDManagerPatchType = generalImprovements.GetType(GIHUDManagerPatchTypeName);
+
+                        if (giPluginType == null)
+                        {
+                            throw new Exception($"Cannot find type {GIPluginTypeName}");
+                        }
+
+                        if (giHUDManagerPatchType == null)
+                        {
+                            throw new Exception($"Cannot find type {GIHUDManagerPatchTypeName}");
+                        }
+
+                        _giShowHitPoints = giPluginType.GetProperty(GIShowHitPointsFieldName, BindingFlags.Public | BindingFlags.Static);
+                        _giHUDManagerStart = giHUDManagerPatchType.GetMethod(GIHUDManagerStartMethodName, BindingFlags.NonPublic | BindingFlags.Static);
+
+                        if (_giShowHitPoints == null)
+                        {
+                            throw new Exception($"Cannot find property {GIPluginTypeName}.{GIShowHitPointsFieldName}");
+                        }
+
+                        if (_giHUDManagerStart == null)
+                        {
+                            throw new Exception($"Cannot find method {GIHUDManagerPatchTypeName}.{GIHUDManagerStartMethodName}");
+                        }
+
+                        Plugin.Log.LogInfo($"Found GeneralImprovements, lightning warning slots will be resized if needed");
+                        _hasGeneralImprovements = true;
+                    }
+                    else
+                    {
+                        _hasGeneralImprovements = false;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Plugin.Log.LogWarning($"Failed to initialize lightning warning helper: {e}");
+                }
+            }
+
+            _helpersInitialized = true;
+        }
 
         public static void CreateSeedUI(HUDManager __instance)
         {
@@ -141,6 +215,8 @@ namespace EnhancedTweaks.Patches
         [HarmonyPostfix]
         static void StartPatch(HUDManager __instance)
         {
+            _hudManager = __instance;
+            InitializeHelpers();
             if (Plugin.showSeedNumber.Value)
             {
                 //Plugin.Log.LogInfo("Creating SeedUI");
@@ -284,7 +360,7 @@ namespace EnhancedTweaks.Patches
                     // Ensure we are not adding less than 1.0
                     .InsertAndAdvance(new CodeInstruction(OpCodes.Ldc_R4, 1f))
                     .InsertAndAdvance(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Mathf), "Max", [typeof(float), typeof(float)])))
-                    
+
                     // Remove (quotaTextAmount + 3) parameter calculation as we will be switching from Mathf.Clamp to Mathf.Min
                     .MatchForward(false,
                         new CodeMatch(OpCodes.Ldarg_0),
@@ -345,6 +421,74 @@ namespace EnhancedTweaks.Patches
             }
 
             return newInstructions;
+        }
+
+        [HarmonyPatch("Start")]
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.First)]
+        static void InitVanillaValues(HUDManager __instance)
+        {
+            if (_vanillaItemSlotSize == -1)
+            {
+                _vanillaItemSlotSize = __instance.itemSlotIconFrames.Length;
+                _prevItemSlotSize = _vanillaItemSlotSize;
+            }
+        }
+
+        [HarmonyPatch(typeof(PlayerControllerB), "ConnectClientToPlayerObject")]
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
+        private static void ResizeSlotsOnConnectClientToPlayerObject()
+        {
+            _lightningWarningSlotsResized = false; // Force resizing in a new game
+            _prevItemSlotSize = _vanillaItemSlotSize;
+            ResizeLightningWarningSlots();
+        }
+
+        [HarmonyPatch(typeof(StartOfRound), "openingDoorsSequence")]
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
+        private static void ResizeSlotsOnOpeningDoorsSequence()
+        {
+            ResizeLightningWarningSlots();
+        }
+
+        [HarmonyPatch(typeof(QuickMenuManager), "CloseQuickMenu")]
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.Last)]
+        private static void ResizeSlotsOnCloseQuickMenu()
+        {
+            ResizeLightningWarningSlots();
+        }
+
+        private static void ResizeLightningWarningSlots()
+        {
+            if ((_vanillaItemSlotSize != _hudManager.itemSlotIconFrames.Length && !_lightningWarningSlotsResized)
+                || _prevItemSlotSize != _hudManager.itemSlotIconFrames.Length)
+            {
+                if (_hasGeneralImprovements && Plugin.helpResizeLightningWarningSlots.Value)
+                {
+                    try
+                    {
+                        // This is very kludgy and have a high chance of breaking if GeneralImprovements get updates,
+                        // but it works well enough for now.  Hopefully GeneralImprovements will be updated in the future
+                        // to work better with custom item slot sizes, then this kludge can be removed entirely.
+                        Plugin.Log.LogInfo($"Resizing lightning warning slots in GeneralImprovements");
+                        ConfigEntry<bool> giShowHitPoints = (ConfigEntry<bool>)_giShowHitPoints.GetValue(null);
+                        bool originalShowHitPointsValue = giShowHitPoints.Value;
+                        giShowHitPoints.Value = false; // don't mess with the hit points display
+                        _giHUDManagerStart.Invoke(null, [_hudManager]);
+                        giShowHitPoints.Value = originalShowHitPointsValue; // restore user's preference
+                    }
+                    catch (Exception e)
+                    {
+                        Plugin.Log.LogWarning($"Failed to adjust lightning warnings in GeneralImprovements: {e}");
+                    }
+                }
+
+                _lightningWarningSlotsResized = true;
+                _prevItemSlotSize = _hudManager.itemSlotIconFrames.Length;
+            }
         }
     }
 }
